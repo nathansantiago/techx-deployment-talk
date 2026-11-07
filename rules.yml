@@ -1,0 +1,23 @@
+groups:
+  - name: alerts
+    rules:
+      - record: instance:http_requests_rate:rate1m
+        expr: rate(http_request_total[1m])
+
+      - alert: HighRequestRate
+        expr: rate(http_request_total[1m]) > 2
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: High request rate on {{ $labels.instance }}
+          description: Request rate of {{ $value }}
+
+      - alert: HighErrorRate
+        expr:  sum(rate(http_request_total{status="500"}[1m])) / sum(rate(http_request_total[1m]))
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: High error rate on {{ $labels.instance }}
+          description: Error rate of {{ $value }}
