@@ -13,11 +13,39 @@ groups:
           summary: High request rate on {{ $labels.instance }}
           description: Request rate of {{ $value }}
 
+      # Why alert on error RATIO instead of an error count or raw request rate:
+      # a ratio stays meaningful as traffic and replica count change. 50 errors/min
+      # is a disaster at 100 req/min but noise at 100,000 req/min. A ratio also
+      # doesn't fire just because the service got popular, which is what a plain
+      # request-rate threshold does. The "> 0.05" threshold is required: without a
+      # comparison the expression returns a value whenever there is traffic, so
+      # the alert would always be firing.
       - alert: HighErrorRate
-        expr:  sum(rate(http_request_total{status="500"}[1m])) / sum(rate(http_request_total[1m]))
+        expr: |
+          sum(rate(http_request_total{status=~"5.."}[1m]))
+            /
+          sum(rate(http_request_total[1m]))
+          > 0.05
         for: 30s
         labels:
           severity: warning
         annotations:
-          summary: High error rate on {{ $labels.instance }}
-          description: Error rate of {{ $value }}
+          summary: More than 5% of requests are failing
+          description: Error ratio is {{ $value | humanizePercentage }}
+
+      # Why alert on p95 latency from a histogram instead of average latency:
+      # averages hide the slow tail. A few very slow requests barely move the mean
+      # but are exactly what users notice. Histogram buckets can also be summed
+      # across all instances before computing the quantile, which gives a correct
+      # fleet-wide p95. Averaging each instance's own p95 would not be correct.
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_request_latency_seconds_bucket[1m]))
+          ) > 0.5
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: p95 latency is above 500ms
+          description: p95 latency is {{ $value | humanizeDuration }}
